@@ -1,0 +1,16 @@
+{
+    "name": "uuf6429/cli2php",
+    "license": "MIT",
+    "type": "library",
+    "description": "Generates PHP code for calling CLI commands by scanning said commands",
+    "autoload": {
+        "psr-4": {
+            "uuf6429\\cli2php\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=5.6",
+        "psr/log": "^1.0",
+        "symfony/process": "^2.3 || ^3.0"
+    }
+}
