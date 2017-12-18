@@ -17,6 +17,57 @@ Generates PHP code for calling CLI commands by scanning said commands.
    print_r($generator->generate());
    ```
 3. Run the script: `php your_script.php`
+4. Behold the output:
+   ```php
+   Array
+   (
+       [active] => Array
+           (
+               [0]  => /**
+               [1]  =>  * Print which machine is active
+               [2]  =>  *
+               [3]  =>  * @param null|string $arg
+               [4]  =>  *
+               [5]  =>  * @return $this current instance, for method chaining
+               [6]  =>  *
+               [7]  =>  * {@internal CLI Syntax: docker-machine active [OPTIONS] [arg...]}
+               [8]  =>  */
+               [9]  => public function active($arg = null)
+               [10] => {
+               [11] =>     $builder = $this->getProcessBuilder();
+               [12] =>
+               [13] =>     $builder->add('active');
+               [14] =>
+               [15] =>     if ($arg !== null) {
+               [16] =>         $builder->add($arg);
+               [17] =>     }
+               [18] =>
+               [19] =>     $process = $builder->getProcess();
+               [20] =>
+               [21] =>     $this->logger->debug('RUN ' . $process->getCommandLine());
+               [22] =>
+               [23] =>     $process->mustRun($this->outputHandler);
+               [24] =>
+               [25] =>     return $this;
+               [26] => }
+               [27] =>
+           )
+
+       [config] => Array
+           (
+               [0]  => /**
+               [1]  =>  * Print the connection config for machine
+               [2]  =>  *
+               [3]  =>  * @param null|string $arg
+               [4]  =>  *
+               [5]  =>  * @return $this current instance, for method chaining
+               [6]  =>  *
+               [7]  =>  * {@internal CLI Syntax: docker-machine config [OPTIONS] [arg...]}
+               [8]  =>  */
+               [9]  => public function config($arg = null)
+               [10] => {
+   ...
+   ```
 
 ## :hankey: How It Works
 Assuming the target CLI tool supports a consistent output (such as docopt format) and its various commands can be inspected, then one can crawl the program output.
