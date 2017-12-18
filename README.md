@@ -14,59 +14,57 @@ Generates PHP code for calling CLI commands by scanning said commands.
 
    $logger = new ConsoleLogger(new ConsoleOutput());
    $generator = new uuf6429\cli2php\Generator('docker-machine', $logger);
-   print_r($generator->generate());
+   var_export($generator->generate());
    ```
 3. Run the script: `php your_script.php`
 4. Behold the output:
    ```php
-   Array
-   (
-       [active] => Array
-           (
-               [0]  => /**
-               [1]  =>  * Print which machine is active
-               [2]  =>  *
-               [3]  =>  * @param null|string $arg
-               [4]  =>  *
-               [5]  =>  * @return $this current instance, for method chaining
-               [6]  =>  *
-               [7]  =>  * {@internal CLI Syntax: docker-machine active [OPTIONS] [arg...]}
-               [8]  =>  */
-               [9]  => public function active($arg = null)
-               [10] => {
-               [11] =>     $builder = $this->getProcessBuilder();
-               [12] =>
-               [13] =>     $builder->add('active');
-               [14] =>
-               [15] =>     if ($arg !== null) {
-               [16] =>         $builder->add($arg);
-               [17] =>     }
-               [18] =>
-               [19] =>     $process = $builder->getProcess();
-               [20] =>
-               [21] =>     $this->logger->debug('RUN ' . $process->getCommandLine());
-               [22] =>
-               [23] =>     $process->mustRun($this->outputHandler);
-               [24] =>
-               [25] =>     return $this;
-               [26] => }
-               [27] =>
-           )
-
-       [config] => Array
-           (
-               [0]  => /**
-               [1]  =>  * Print the connection config for machine
-               [2]  =>  *
-               [3]  =>  * @param null|string $arg
-               [4]  =>  *
-               [5]  =>  * @return $this current instance, for method chaining
-               [6]  =>  *
-               [7]  =>  * {@internal CLI Syntax: docker-machine config [OPTIONS] [arg...]}
-               [8]  =>  */
-               [9]  => public function config($arg = null)
-               [10] => {
-   ...
+   [
+     'active' => [
+       '/**',
+       ' * Print which machine is active',
+       ' *',
+       ' * @param null|string $arg',
+       ' *',
+       ' * @return $this current instance, for method chaining',
+       ' *',
+       ' * {@internal CLI Syntax: docker-machine active [OPTIONS] [arg...]}',
+       ' */',
+       'public function active($arg = null)',
+       '{',
+       '    $builder = $this->getProcessBuilder();',
+       '',
+       '    $builder->add(\'active\');',
+       '',
+       '    if ($arg !== null) {',
+       '        $builder->add($arg);',
+       '    }',
+       '',
+       '    $process = $builder->getProcess();',
+       '',
+       '    $this->logger->debug(\'RUN \' . $process->getCommandLine());',
+       '',
+       '    $process->mustRun($this->outputHandler);',
+       '',
+       '    return $this;',
+       '}',
+       '',
+     ],
+     'config' => [
+       '/**',
+       ' * Print the connection config for machine',
+       ' *',
+       ' * @param null|string $arg',
+       ' *',
+       ' * @return $this current instance, for method chaining',
+       ' *',
+       ' * {@internal CLI Syntax: docker-machine config [OPTIONS] [arg...]}',
+       ' */',
+       'public function config($arg = null)',
+       '{',
+   // ...
+     ],
+   ];
    ```
 
 ## :hankey: How It Works
