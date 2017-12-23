@@ -3,10 +3,11 @@
 namespace uuf6429\cli2php;
 
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\ProcessBuilder;
 
-class Generator
+class Generator implements Modifiable
 {
     /**
      * @var string
@@ -36,22 +37,59 @@ class Generator
     private $defaultType = 'string';
 
     /**
+     * Default data type when not explicitly known.
+     *
+     * @var string
+     */
+    private $defaultListType = 'string[]';
+
+    /**
+     * @var MethodReturn What methods should return by default.
+     */
+    private $defaultReturn;
+
+    /**
      * @var string
      */
     private static $COMMAND_PATH_PROP = 'command_path';
 
     /**
+     * @var null|MethodMod
+     */
+    private $currentMethod;
+
+    /**
+     * @var MethodMod[]
+     */
+    private $methodModifications = [];
+
+    /**
      * @param string $binCmd
      * @param LoggerInterface $logger
+     *
+     * @return static
      */
-    public function __construct($binCmd, LoggerInterface $logger)
+    public static function create($binCmd, LoggerInterface $logger = null)
     {
-        $this->binCmd = $binCmd;
-        $this->logger = $logger;
+        return new static($binCmd, $logger);
     }
 
     /**
-     * @return array|string[]
+     * @param string $binCmd
+     * @param LoggerInterface $logger
+     */
+    protected function __construct($binCmd, LoggerInterface $logger = null)
+    {
+        $this->binCmd = $binCmd;
+        $this->logger = $logger ?: new NullLogger();
+        $this->defaultReturn = new MethodReturn();
+        $this->defaultReturn->expr = '$this';
+        $this->defaultReturn->type = '$this';
+        $this->defaultReturn->desc = 'current instance, for method chaining';
+    }
+
+    /**
+     * @return array[] Array of generated methods, key is the command and the value is an array of lines of code.
      */
     public function generate()
     {
@@ -72,6 +110,79 @@ class Generator
     }
 
     /**
+     * @param string $name
+     *
+     * @return $this
+     */
+    public function method($name)
+    {
+        if (!isset($this->methodModifications[$name])) {
+            $this->methodModifications[$name] = new MethodMod($name);
+        }
+
+        $this->currentMethod = &$this->methodModifications[$name];
+
+        return $this;
+    }
+
+    public function renameTo($newName)
+    {
+        return $this->proxyMethodCall(__FUNCTION__, func_get_args());
+    }
+
+    public function ignore()
+    {
+        return $this->proxyMethodCall(__FUNCTION__, func_get_args());
+    }
+
+    public function modifySummary($pattern, $replacement)
+    {
+        return $this->proxyMethodCall(__FUNCTION__, func_get_args());
+    }
+
+    public function renameArgTo($oldName, $newName)
+    {
+        return $this->proxyMethodCall(__FUNCTION__, func_get_args());
+    }
+
+    public function setReturn($returnExpr, $returnType, $returnDesc)
+    {
+        return $this->proxyMethodCall(__FUNCTION__, func_get_args());
+    }
+
+    /**
+     * @param string $mtd
+     * @param array $args
+     *
+     * @return $this
+     */
+    private function proxyMethodCall($mtd, array $args)
+    {
+        if (!$this->currentMethod) {
+            throw new \LogicException('A method must have been selected first, by using method().');
+        }
+
+        call_user_func_array([$this->currentMethod, $mtd], $args);
+
+        return $this;
+    }
+
+    /**
+     * @param string[]|string $cmdPathOrMethod
+     *
+     * @return null|MethodMod
+     */
+    private function getMethodMod($cmdPathOrMethod)
+    {
+        if (is_array($cmdPathOrMethod)) {
+            $cmdPathOrMethod = $this->makeSymbolName($cmdPathOrMethod);
+        }
+
+        return isset($this->methodModifications[$cmdPathOrMethod])
+            ? $this->methodModifications[$cmdPathOrMethod] : null;
+    }
+
+    /**
      * @return ProcessBuilder
      */
     private function getProcessBuilder()
@@ -84,13 +195,17 @@ class Generator
      */
     private function processCommand($commandPath)
     {
-        $builder = $this->getProcessBuilder()->add('help');
-        array_map([$builder, 'add'], $commandPath);
-        $process = $builder->getProcess();
+        $methodMod = $commandPath ? $this->getMethodMod($commandPath) : null;
 
-        $this->processes[] = $process;
-        $process->{self::$COMMAND_PATH_PROP} = $commandPath;
-        $process->start();
+        if (!$methodMod || !$methodMod->isIgnored()) {
+            $builder = $this->getProcessBuilder()->add('help');
+            array_map([$builder, 'add'], $commandPath);
+            $process = $builder->getProcess();
+
+            $this->processes[]                   = $process;
+            $process->{self::$COMMAND_PATH_PROP} = $commandPath;
+            $process->start();
+        }
     }
 
     private function checkProcesses()
@@ -132,14 +247,20 @@ class Generator
      */
     private function handleOptions($commandPath, $output)
     {
+        if (!$commandPath) {
+            return;
+        }
+
         if (!preg_match('/Usage:\s+(.+?)\\n(.*?)\\n[^\\n]*:\\n/s', $output, $matches)) {
             $this->logger->warning('Could not retrieve summary for "{cmd}" command.', ['cmd' => implode(' ', $commandPath)]);
 
             return;
         }
 
+        $methodMod = $this->getMethodMod($commandPath);
+        $methodName = $methodMod ? $methodMod->getName() : $this->makeSymbolName($commandPath);
         $syntax = $this->parseSyntax(trim($matches[1]), $commandPath);
-        $summary = trim($matches[2]);
+        $summary = $methodMod ? $methodMod->applySummaryMods(trim($matches[2])) : trim($matches[2]);
 
         $options = [];
         $parts = (array) preg_split('/(\\w+:)\\n/', $output, -1, PREG_SPLIT_DELIM_CAPTURE);
@@ -150,7 +271,50 @@ class Generator
             }
         }
 
-        $this->generateMethod($commandPath, $syntax, $summary, $options);
+        $return = ($methodMod ? $methodMod->getMethodReturn() : null) ?: $this->defaultReturn;
+
+        $this->updateVarNames($syntax, $options, $methodMod);
+        $this->generateMethod($methodName, $commandPath, $syntax, $summary, $options, $return);
+    }
+
+    /**
+     * @param CliSyntax $syntax
+     * @param CliOption[] $options
+     * @param MethodMod $methodMod
+     */
+    private function updateVarNames(CliSyntax &$syntax, array &$options, MethodMod $methodMod = null)
+    {
+        $usedNames = [];
+
+        foreach ($syntax->tokens as &$token) {
+            $varName = $this->makeUniqueName($this->makeSymbolName($token->name), $usedNames);
+            $usedNames[] = $varName;
+            $token->varName = '$' . ($methodMod ? $methodMod->getArgName($varName) : $varName);
+        }
+
+        foreach ($options as &$option) {
+            $varName = $this->makeUniqueName($this->makeSymbolName($option->name), $usedNames);
+            $usedNames[] = $varName;
+            $option->varName = '$' . ($methodMod ? $methodMod->getArgName($varName) : $varName);
+        }
+    }
+
+    /**
+     * @param string $name
+     * @param string[] $usedNames
+     *
+     * @return string
+     */
+    private function makeUniqueName($name, $usedNames)
+    {
+        $newName = $name;
+        $counter = 0;
+
+        while (in_array($newName, $usedNames)) {
+            $newName = $name . (++$counter);
+        }
+
+        return $newName;
     }
 
     /**
@@ -161,10 +325,6 @@ class Generator
      */
     private function parseSyntax($rawSyntaxLine, $commandPath)
     {
-        static $tokenDataType = [
-            'container' => 'string',
-        ];
-
         /** @var CliSyntaxToken[] $tokens */
         $tokens = [];
         $rawSyntaxLine = str_replace(' | ', '_OR_', $rawSyntaxLine);
@@ -180,11 +340,11 @@ class Generator
             $token->isOptions = $rawToken === '[OPTIONS]';
             $token->isOptional = substr_replace($rawToken, '', 1, -1) === '[]';
             $token->isRepeatable = substr($rawToken, -4, 3) === '...';
-            $token->dataType = isset($tokenDataType[$token->name])
-                ? $tokenDataType[$token->name] : $this->defaultType;
+            $token->dataType = $token->isRepeatable ? $this->defaultListType : $this->defaultType;
 
             if ($token->isRepeatable && isset($tokens[$token->name])) {
                 $tokens[$token->name]->isRepeatable = true;
+                $tokens[$token->name]->dataType = $this->defaultListType;
             } else {
                 $tokens[$token->name] = $token;
             }
@@ -235,44 +395,44 @@ class Generator
     }
 
     /**
+     * @param string $methodName
      * @param string[] $commandPath
      * @param CliSyntax $syntax
      * @param string $summary
      * @param CliOption[] $options
+     * @param MethodReturn $return
      */
-    private function generateMethod($commandPath, $syntax, $summary, $options)
+    private function generateMethod($methodName, $commandPath, $syntax, $summary, $options, $return)
     {
-        if (!$commandPath) {
-            return;
-        }
-
         $lines = [];
 
         $lines[] = '/**';
-        $lines[] = ' * ' . $summary;
+        foreach (explode("\n", $summary) as $line) {
+            $lines[] = ' * ' . trim($line);
+        }
         $lines[] = ' *';
         foreach ($syntax->tokens as $token) {
             if ($token->isOptions) {
                 // handle options
                 foreach ($options as $option) {
                     $lines[] = sprintf(
-                        ' * @param %s $%s %s',
+                        ' * @param %s %s %s',
                         $option->args ? "null|{$this->defaultType}" : 'null|bool',
-                        $this->makeSymbolName($option->name),
+                        $option->varName,
                         $option->desc
                     );
                 }
             } else {
                 // handle arguments
                 $lines[] = sprintf(
-                    ' * @param %s $%s',
+                    ' * @param %s %s',
                     $token->isOptional ? "null|$token->dataType" : $token->dataType,
-                    $this->makeSymbolName($token->name)
+                    $token->varName
                 );
             }
         }
         $lines[] = ' *';
-        $lines[] = ' * @return $this current instance, for method chaining';
+        $lines[] = " * @return {$return->type} {$return->desc}";
         $lines[] = ' *';
         $lines[] = " * {@internal CLI Syntax: {$syntax->source}}";
         $lines[] = ' */';
@@ -283,27 +443,16 @@ class Generator
             if ($token->isOptions) {
                 // handle options
                 foreach ($options as $option) {
-                    $args[] = sprintf(
-                        '$%s = null',
-                        $this->makeSymbolName($option->name)
-                    );
+                    $args[] = $option->varName . ' = null';
                 }
                 $optionsSet = true;
             } else {
                 // handle arguments
-                $args[] = sprintf(
-                    '$%s%s',
-                    $this->makeSymbolName($token->name),
-                    ($token->isOptional || $optionsSet) ? ' = null' : ''
-                );
+                $args[] = $token->varName . (($token->isOptional || $optionsSet) ? ' = null' : '');
             }
         }
 
-        $lines[] = sprintf(
-            'public function %s(%s)',
-            $this->makeSymbolName($commandPath),
-            implode(', ', $args)
-        );
+        $lines[] = sprintf('public function %s(%s)', $methodName, implode(', ', $args));
         $lines[] = '{';
         $lines[] = '    $builder = $this->getProcessBuilder();';
         $lines[] = '';
@@ -317,27 +466,30 @@ class Generator
             if ($token->isOptions) {
                 // handle options
                 foreach ($options as $option) {
-                    $varName = '$' . $this->makeSymbolName($option->name);
-                    $lines[] = "    if ($varName !== null) {";
+                    $lines[] = "    if ({$option->varName} !== null) {";
                     $lines[] = sprintf(
                         '        $builder->add(\'%s\')%s;',
                         $option->short ?: $option->long,
-                        $option->args ? "->add($varName)" : ''
+                        $option->args ? "->add({$option->varName})" : ''
                     );
                     $lines[] = '    }';
                     $lines[] = '';
                 }
             } else {
                 // handle arguments
-                $varName = '$' . $this->makeSymbolName($token->name);
-                if ($token->isOptional) {
-                    $lines[] = "    if ($varName !== null) {";
-                    $lines[] = "        \$builder->add($varName);";
-                    $lines[] = '    }';
+                if ($token->isRepeatable) {
+                    $lines[] = "    array_map([\$builder, 'add'], (array){$token->varName});";
                     $lines[] = '';
                 } else {
-                    $lines[] = "    \$builder->add($varName);";
-                    $lines[] = '';
+                    if ($token->isOptional) {
+                        $lines[] = "    if ({$token->varName} !== null) {";
+                        $lines[] = "        \$builder->add({$token->varName});";
+                        $lines[] = '    }';
+                        $lines[] = '';
+                    } else {
+                        $lines[] = "    \$builder->add({$token->varName});";
+                        $lines[] = '';
+                    }
                 }
             }
         }
@@ -348,11 +500,11 @@ class Generator
         $lines[] = '';
         $lines[] = '    $process->mustRun($this->outputHandler);';
         $lines[] = '';
-        $lines[] = '    return $this;';
+        $lines[] = "    return {$return->expr};";
         $lines[] = '}';
         $lines[] = '';
 
-        $this->methods[implode(' ', $commandPath)] = $lines;
+        $this->methods[$methodName] = $lines;
     }
 
     /**

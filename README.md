@@ -7,38 +7,46 @@ Generates PHP code for calling CLI commands by scanning said commands.
    ```php
    <?php
 
-   require_once('path/to/download/source/vendor/autoload.php');
+   require_once('YOUR_PROJECT/vendor/autoload.php');
 
-   use Symfony\Component\Console\Logger\ConsoleLogger;
-   use Symfony\Component\Console\Output\ConsoleOutput;
+   $generator = \uuf6429\cli2php\Generator::create('docker-machine');
 
-   $logger = new ConsoleLogger(new ConsoleOutput());
-   $generator = new uuf6429\cli2php\Generator('docker-machine', $logger);
-   var_export($generator->generate());
+   // let's modify methods that will be generated
+   $generator->method('active')
+       ->renameTo('getActive')
+       ->modifySummary('/Print /', 'Returns ')
+       ->renameArgTo('$arg', '$machineNames')
+       ->setReturn('trim($process->getOutput)', 'string', 'name of active machine')
+   ;
+
+   // generate methods from program
+   $methods = $generator->generate();
+
+   // dump generated methods
+   var_export($methods);
    ```
 3. Run the script: `php your_script.php`
 4. Behold the output:
    ```php
    [
-     'active' => [
+   // ...
+     'getActive' => [
        '/**',
-       ' * Print which machine is active',
+       ' * Returns which machine is active',
        ' *',
-       ' * @param null|string $arg',
+       ' * @param null|string[] $machineNames',
        ' *',
-       ' * @return $this current instance, for method chaining',
+       ' * @return string name of active machine',
        ' *',
        ' * {@internal CLI Syntax: docker-machine active [OPTIONS] [arg...]}',
        ' */',
-       'public function active($arg = null)',
+       'public function getActive($machineNames = null)',
        '{',
        '    $builder = $this->getProcessBuilder();',
        '',
        '    $builder->add(\'active\');',
        '',
-       '    if ($arg !== null) {',
-       '        $builder->add($arg);',
-       '    }',
+       '    array_map([$builder, \'add\'], (array)$machineNames);',
        '',
        '    $process = $builder->getProcess();',
        '',
@@ -46,22 +54,10 @@ Generates PHP code for calling CLI commands by scanning said commands.
        '',
        '    $process->mustRun($this->outputHandler);',
        '',
-       '    return $this;',
+       '    return trim($process->getOutput);',
        '}',
        '',
      ],
-     'config' => [
-       '/**',
-       ' * Print the connection config for machine',
-       ' *',
-       ' * @param null|string $arg',
-       ' *',
-       ' * @return $this current instance, for method chaining',
-       ' *',
-       ' * {@internal CLI Syntax: docker-machine config [OPTIONS] [arg...]}',
-       ' */',
-       'public function config($arg = null)',
-       '{',
    // ...
      ],
    ];
@@ -82,10 +78,11 @@ At this point we keep going through each of these discovering more commands and 
 - Ideally should switch to a proper docopt parser, such as [docopt/docopt.php](https://github.com/docopt/docopt.php)
 - Fix the various TODOs/FIXMEs :)
 - Support repeatable arguments and options (array function arguments)
+- Limit the number of concurrent processes
 
 ## :skull: Disclaimer
 - This tool was created to make it easier to create [PHPDocker](https://github.com/uuf6429/PHPDocker).
-  - It is likely that other program's help output format is not supported.
+  - It is likely that other programs' help output format is not supported.
   - This is also why it's not available as a composer package on `packagist`.
 - It is also likely that the code generated is buggy and unreliable - please review rigorously any output before actual use.
 - No support is provided, in particular no new features are developed. Pull requests are still welcome though, but expect low priority.
