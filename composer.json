@@ -11,6 +11,7 @@
     "require": {
         "php": ">=5.6",
         "psr/log": "^1.0",
-        "symfony/process": "^2.3 || ^3.0"
+        "symfony/process": "^2.3 || ^3.0",
+        "docopt/docopt": "^1.0"
     }
 }

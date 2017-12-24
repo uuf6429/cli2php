@@ -47,6 +47,7 @@ class MethodMod implements Modifiable
 
     public function setReturn($returnExpr, $returnType, $returnDesc)
     {
+        $this->methodReturn = new MethodReturn();
         $this->methodReturn->expr = $returnExpr;
         $this->methodReturn->type = $returnType;
         $this->methodReturn->desc = $returnDesc;

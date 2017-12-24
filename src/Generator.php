@@ -234,6 +234,13 @@ class Generator implements Modifiable
                     // process successful, parse output, add new commands and inspect them too
                     $this->logger->info("Process $key finished, processing output...");
                     $output = $process->getOutput() ?: $process->getErrorOutput();
+                    new \Docopt\Handler();
+                    $usage = \Docopt\parse_section('usage:', $output);
+                    $options = \Docopt\parse_defaults($output);
+                    print_r(['$usage'=>$usage,'$options'=>$options]);
+                    die('????');
+
+
                     $this->handleOptions($process->{self::$COMMAND_PATH_PROP}, $output);
                     $this->handleCommands($process->{self::$COMMAND_PATH_PROP}, $output);
                 }
