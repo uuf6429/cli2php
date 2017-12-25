@@ -369,7 +369,7 @@ class Generator implements Modifiable
         $lines = explode("\n", $rawOptionsSection);
         // parse lines into options
         foreach ($lines as $line) {
-            $regex = '/^\\s{2,}(?:(--?\\w+),)?\\s+(--?\\w+)\\s(\\w+)?\\s{2,}(.+)$/';
+            $regex = '/^\\s{2,}(?:(--?[\\w\\-]+),)?\\s+(--?[\\w\\-]+)\\s((?:\\[.+\\])|(?:".+")|(?:\\w+)|)?\\s+(.+)$/';
             if (preg_match($regex, $line, $matches)) {
                 list(, $arg1, $arg2, $args, $desc) = $matches;
                 $option = new CliOption();
