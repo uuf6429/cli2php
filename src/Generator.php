@@ -260,7 +260,10 @@ class Generator implements Modifiable
         $methodMod = $this->getMethodMod($commandPath);
         $methodName = $methodMod ? $methodMod->getName() : $this->makeSymbolName($commandPath);
         $syntax = $this->parseSyntax(trim($matches[1]), $commandPath);
-        $summary = $methodMod ? $methodMod->applySummaryMods(trim($matches[2])) : trim($matches[2]);
+        $summary = rtrim(trim($matches[2]), '.') . '.';
+        if ($methodMod) {
+            $summary = $methodMod->applySummaryMods($summary);
+        }
 
         $options = [];
         $parts = (array) preg_split('/(\\w+:)\\n/', $output, -1, PREG_SPLIT_DELIM_CAPTURE);
@@ -478,7 +481,7 @@ class Generator implements Modifiable
             } else {
                 // handle arguments
                 if ($token->isRepeatable) {
-                    $lines[] = "    array_map([\$builder, 'add'], (array){$token->varName});";
+                    $lines[] = "    array_map([\$builder, 'add'], (array) {$token->varName});";
                     $lines[] = '';
                 } else {
                     if ($token->isOptional) {
